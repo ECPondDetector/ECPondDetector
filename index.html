@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Remote Sensing Web Map</title>
+  <title>Ecuador Shrimp Ponds</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { height: 100%; margin: 0; }
@@ -27,7 +27,7 @@
   
   <!-- Simple UI -->
   <div class="toolbar">
-    <h3>Years (toggle)</h3>
+    <h3>Years:</h3>
     <div id="yearList" class="year-list"></div>
     <div class="hint">Use the map layers (☰) control to switch basemap (OSM / Esri).</div>
   </div>
@@ -41,13 +41,13 @@
     // Put the public URLs (preferably ZIPs containing .shp+.dbf+.shx+.prj)
     // Example: hosted on S3/R2/GCS or any static hosting with CORS enabled
     const YEAR_LAYERS = [
-      { year: 2018, url: '2018.zip' },
-      { year: 2019, url: 'https://example.com/2019.zip' },
-      { year: 2020, url: 'https://example.com/2020.zip' },
-      { year: 2021, url: 'https://example.com/2021.zip' },
-      { year: 2022, url: 'https://example.com/2022.zip' },
-      { year: 2023, url: 'https://example.com/2023.zip' },
-      { year: 2024, url: 'https://example.com/2024.zip' }
+      //{ year: 2018, url: '2018.zip' },
+      { year: 2019, url: '2019.zip' },
+      { year: 2020, url: '2020.zip' },
+      { year: 2021, url: '2021.zip' },
+      { year: 2022, url: '2022.zip' },
+      { year: 2023, url: '2023.zip' },
+      { year: 2024, url: '2024.zip' }
     ];
 
     // Distinct colors per year

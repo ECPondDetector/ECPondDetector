@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Remote Sensing Web Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; width: 100%; }
+    .toolbar {
+      position: absolute; top: 10px; left: 10px; z-index: 1000;
+      background: rgba(255,255,255,0.95); border-radius: 14px; padding: 10px 12px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.15); font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+      width: 220px;
+    }
+    .toolbar h3 { margin: 0 0 8px 0; font-size: 14px; }
+    .year-list { display:flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow:auto; padding-right: 4px; }
+    .year-item { display:flex; align-items:center; gap:8px; font-size: 13px; }
+    .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.2); }
+    .leaflet-control-layers { border-radius: 12px; }
+    .hint { font-size: 11px; color: #666; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  
+  <!-- Simple UI -->
+  <div class="toolbar">
+    <h3>Years (toggle)</h3>
+    <div id="yearList" class="year-list"></div>
+    <div class="hint">Use the map layers (☰) control to switch basemap (OSM / Esri).</div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- shapefile loader -->
+  <script src="https://unpkg.com/shpjs@5.0.0/dist/shp.min.js"></script>
+  
+  <script>
+    // ===== CONFIGURE YOUR SHAPEFILES (2018-2024) =====
+    // Put the public URLs (preferably ZIPs containing .shp+.dbf+.shx+.prj)
+    // Example: hosted on S3/R2/GCS or any static hosting with CORS enabled
+    const YEAR_LAYERS = [
+      { year: 2018, url: '2018.zip' },
+      { year: 2019, url: 'https://example.com/2019.zip' },
+      { year: 2020, url: 'https://example.com/2020.zip' },
+      { year: 2021, url: 'https://example.com/2021.zip' },
+      { year: 2022, url: 'https://example.com/2022.zip' },
+      { year: 2023, url: 'https://example.com/2023.zip' },
+      { year: 2024, url: 'https://example.com/2024.zip' }
+    ];
+
+    // Distinct colors per year
+    const COLORS = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#17becf'];
+
+    // Initial map view (change to your AOI)
+    const INITIAL_VIEW = { lat: -2.17, lng: -79.92, zoom: 9 }; // Guayaquil
+
+    // ===== BASEMAPS =====
+    const basemaps = {
+      "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 20, attribution: '&copy; OpenStreetMap'
+      }),
+      "Esri Imagery": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 20, attribution: 'Tiles &copy; Esri'
+      })
+    };
+
+    // ===== MAP INIT =====
+    const map = L.map('map', {
+      center: [INITIAL_VIEW.lat, INITIAL_VIEW.lng],
+      zoom: INITIAL_VIEW.zoom,
+      layers: [basemaps["OpenStreetMap"]]
+    });
+
+    const overlays = {}; // for layer control
+    const layerControl = L.control.layers(basemaps, overlays, { collapsed: true }).addTo(map);
+
+    // ===== Load shapefiles and build UI =====
+    const yearListEl = document.getElementById('yearList');
+    const loadedLayers = new Map();
+
+    function styleForColor(hex) {
+      return { color: hex, weight: 1.5, fillColor: hex, fillOpacity: 0.2 };
+    }
+
+    function addYearCheckbox({year, color}) {
+      const row = document.createElement('label');
+      row.className = 'year-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = `year-${year}`;
+      cb.checked = false;
+      const sw = document.createElement('span');
+      sw.className = 'swatch';
+      sw.style.background = color;
+      const txt = document.createElement('span');
+      txt.textContent = String(year);
+      row.appendChild(cb); row.appendChild(sw); row.appendChild(txt);
+      yearListEl.appendChild(row);
+      return cb;
+    }
+
+    function bindPopupProps(feature, layer) {
+      const props = feature && feature.properties ? feature.properties : {};
+      const html = `<pre style="margin:0; max-width:280px; white-space:pre-wrap;">${JSON.stringify(props, null, 2)}</pre>`;
+      layer.bindPopup(html);
+    }
+
+    //async function loadYearLayer(entry, color) {
+    //  try {
+    //    const gj = await shp(entry.url); // GeoJSON from shapefile
+    //    const layer = L.geoJSON(gj, { style: styleForColor(color), onEachFeature: bindPopupProps });
+    //    loadedLayers.set(entry.year, layer);
+    //    overlays[`${entry.year}`] = layer; // for layer control
+    //    layerControl.addOverlay(layer, `${entry.year}`);
+    //    return layer;
+    //  } catch (err) {
+    //    console.error(`Failed loading ${entry.year}:`, err);
+    //    return null;
+    //  }
+    //}
+    async function loadYearLayer(entry, color) {
+    try {
+      // Resolve relative paths against the page URL (handles /subfolders/ correctly)
+      const resolved = new URL(entry.url, window.location.href).href;
+      console.log('Fetching shapefile:', resolved);
+      const gj = await shp(resolved); // GeoJSON from shapefile ZIP
+      const layer = L.geoJSON(gj, { style: styleForColor(color), onEachFeature: bindPopupProps });
+      loadedLayers.set(entry.year, layer);
+      overlays[`${entry.year}`] = layer;
+      layerControl.addOverlay(layer, `${entry.year}`);
+      return layer;
+    } catch (err) {
+      console.error(`Failed loading ${entry.year}:`, err);
+      alert(`Could not load shapefile for ${entry.year}. Check the ZIP path & structure.\nSee console for details.`);
+      return null;
+    }
+  }
+
+    // Create checkboxes and lazy-load layers on first toggle
+    const boundsAccumulator = [];
+
+    YEAR_LAYERS.forEach(async (entry, idx) => {
+      const color = COLORS[idx % COLORS.length];
+      const cb = addYearCheckbox({ year: entry.year, color });
+
+      let loaded = false;
+      cb.addEventListener('change', async (e) => {
+        let layer = loadedLayers.get(entry.year);
+        if (e.target.checked) {
+          if (!layer) {
+            if (!loaded) { loaded = true; }
+            layer = await loadYearLayer(entry, color);
+          }
+          if (layer) {
+            layer.addTo(map);
+            if (layer.getBounds && layer.getBounds().isValid()) {
+              boundsAccumulator.push(layer.getBounds());
+              const union = boundsAccumulator.reduce((acc,b) => acc ? acc.extend(b) : L.latLngBounds(b.getSouthWest(), b.getNorthEast()), null);
+              if (union) map.fitBounds(union, { padding: [20,20] });
+            }
+          }
+        } else {
+          if (layer) map.removeLayer(layer);
+        }
+      });
+    });
+
+  </script>
+</body>
+</html>
+

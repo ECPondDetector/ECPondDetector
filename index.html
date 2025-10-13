@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Ecuador Shrimp Ponds</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <title>Ecuador Shrimp Pond Detector</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
   <style>
     html, body { height: 100%; margin: 0; }
     #map { height: 100%; width: 100%; }
@@ -12,79 +12,101 @@
       position: absolute; top: 10px; left: 10px; z-index: 1000;
       background: rgba(255,255,255,0.95); border-radius: 14px; padding: 10px 12px;
       box-shadow: 0 6px 20px rgba(0,0,0,0.15); font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
-      width: 220px;
+      width: 260px;
     }
     .toolbar h3 { margin: 0 0 8px 0; font-size: 14px; }
     .year-list { display:flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow:auto; padding-right: 4px; }
     .year-item { display:flex; align-items:center; gap:8px; font-size: 13px; }
     .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.2); }
-    .leaflet-control-layers { border-radius: 12px; }
-    .hint { font-size: 11px; color: #666; margin-top: 8px; }
+    .basemap { margin-top:10px; }
+    .basemap label { margin-right: 8px; font-size: 13px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  
-  <!-- Simple UI -->
+
   <div class="toolbar">
     <h3>Years:</h3>
     <div id="yearList" class="year-list"></div>
-    <div class="hint">Use the map layers (☰) control to switch basemap (OSM / Esri).</div>
+    <div class="basemap">
+      <h3>Basemap</h3>
+      <label><input type="radio" name="basemap" value="osm" checked>OSM</label>
+      <label><input type="radio" name="basemap" value="esri"> Esri</label>
+    </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- shapefile loader -->
-  <script src="https://unpkg.com/shpjs@5.0.0/dist/shp.min.js"></script>
-  
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.0.7/dist/pmtiles.js"></script>
   <script>
-    // ===== CONFIGURE YOUR SHAPEFILES (2018-2024) =====
-    // Put the public URLs (preferably ZIPs containing .shp+.dbf+.shx+.prj)
-    // Example: hosted on S3/R2/GCS or any static hosting with CORS enabled
-    const YEAR_LAYERS = [
-      //{ year: 2018, url: '2018.zip' },
-      { year: 2019, url: '2019.zip' },
-      { year: 2020, url: '2020.zip' },
-      { year: 2021, url: '2021.zip' },
-      { year: 2022, url: '2022.zip' },
-      { year: 2023, url: '2023.zip' },
-      { year: 2024, url: '2024.zip' }
+    // =====================
+    // HOW THIS VERSION WORKS
+    // =====================
+    // Instead of loading raw Shapefiles (heavy), we load *vector tiles* from .pmtiles files.
+    // PMTiles is a single-file tile archive that works on static hosting (e.g., GitHub Pages)
+    // via HTTP range requests — no server code needed.
+
+    // 1) Convert each year's Shapefile -> GeoJSONL -> PMTiles (see CLI commands in the chat).
+    // 2) Put 2018.pmtiles, 2019.pmtiles, ... next to this HTML.
+    // 3) Update the SOURCES list below if you change filenames.
+
+    // ========== CONFIG ==========
+    const INITIAL_VIEW = { center: [-79.92, -2.17], zoom: 8.8 }; // [lng, lat]
+
+    // pmtiles filenames (relative to this html)
+    const SOURCES = [
+      { year: 2019, url: './2019.pmtiles' },
+      { year: 2020, url: './2020.pmtiles' },
+      { year: 2021, url: './2021.pmtiles' },
+      { year: 2022, url: './2022.pmtiles' },
+      { year: 2023, url: './2023.pmtiles' },
+      { year: 2024, url: './2024.pmtiles' },
     ];
 
-    // Distinct colors per year
+    // fixed distinct colors
     const COLORS = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#17becf'];
 
-    // Initial map view (change to your AOI)
-    const INITIAL_VIEW = { lat: -2.17, lng: -79.92, zoom: 9 }; // Guayaquil
+    // ========== MAP INIT ==========
+    // Register PMTiles protocol
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol('pmtiles', protocol.tile);
 
-    // ===== BASEMAPS =====
-    const basemaps = {
-      "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 20, attribution: '&copy; OpenStreetMap'
-      }),
-      "Esri Imagery": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 20, attribution: 'Tiles &copy; Esri'
-      })
-    };
-
-    // ===== MAP INIT =====
-    const map = L.map('map', {
-      center: [INITIAL_VIEW.lat, INITIAL_VIEW.lng],
+    const map = new maplibregl.Map({
+      container: 'map',
+      center: INITIAL_VIEW.center,
       zoom: INITIAL_VIEW.zoom,
-      layers: [basemaps["OpenStreetMap"]]
+      style: {
+        version: 8,
+        sources: {
+          // OSM raster basemap
+          osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '© OpenStreetMap contributors'
+          },
+          // Esri imagery basemap
+          esri: {
+            type: 'raster',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256,
+            attribution: 'Tiles © Esri'
+          }
+        },
+        layers: [
+          { id: 'basemap-osm', type: 'raster', source: 'osm', layout: { visibility: 'visible' } },
+          { id: 'basemap-esri', type: 'raster', source: 'esri', layout: { visibility: 'none' } },
+          // vector layers get appended after load
+        ]
+      }
     });
 
-    const overlays = {}; // for layer control
-    const layerControl = L.control.layers(basemaps, overlays, { collapsed: true }).addTo(map);
+    map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-    // ===== Load shapefiles and build UI =====
+    // Build year toggles and lazy-add vector tile sources/layers
     const yearListEl = document.getElementById('yearList');
-    const loadedLayers = new Map();
+    const added = new Map(); // year -> true once added
 
-    function styleForColor(hex) {
-      return { color: hex, weight: 1.5, fillColor: hex, fillOpacity: 0.2 };
-    }
-
-    function addYearCheckbox({year, color}) {
+    function addYearCheckbox(year, color) {
       const row = document.createElement('label');
       row.className = 'year-item';
       const cb = document.createElement('input');
@@ -101,72 +123,75 @@
       return cb;
     }
 
-    function bindPopupProps(feature, layer) {
-      const props = feature && feature.properties ? feature.properties : {};
-      const html = `<pre style="margin:0; max-width:280px; white-space:pre-wrap;">${JSON.stringify(props, null, 2)}</pre>`;
-      layer.bindPopup(html);
+    function ensureYearLayer(src) {
+      const { year, url } = src;
+      if (added.get(year)) return;
+
+      // Create a PMTiles instance - not strictly necessary for MapLibre, but handy for bounds
+      const p = new pmtiles.PMTiles(url);
+
+      map.addSource(`year-${year}`, {
+        type: 'vector',
+        url: `pmtiles://${url}`
+      });
+
+      // Layer names: Tippecanoe default is the input layer name; we'll assume it's also `${year}`.
+      // If your tippecanoe layer name differs, change "source-layer" below accordingly.
+      map.addLayer({
+        id: `fill-${year}`,
+        type: 'fill',
+        source: `year-${year}`,
+        'source-layer': `${year}`,
+        paint: {
+          'fill-color': COLORS[SOURCES.findIndex(s=>s.year===year) % COLORS.length],
+          'fill-opacity': 0.25
+        },
+        layout: { visibility: 'none' }
+      });
+      map.addLayer({
+        id: `line-${year}`,
+        type: 'line',
+        source: `year-${year}`,
+        'source-layer': `${year}`,
+        paint: {
+          'line-color': COLORS[SOURCES.findIndex(s=>s.year===year) % COLORS.length],
+          'line-width': 1.2
+        },
+        layout: { visibility: 'none' }
+      });
+
+      // Fit to bounds on first enable (best-effort)
+      p.getHeader().then(h => {
+        if (!h || !h.minLon) return; // header might not have bounds in very old pmtiles
+        const b = [[h.minLon, h.minLat],[h.maxLon, h.maxLat]];
+        try { map.fitBounds(b, { padding: 20, maxZoom: 14 }); } catch (_) {}
+      }).catch(()=>{});
+
+      added.set(year, true);
     }
 
-    //async function loadYearLayer(entry, color) {
-    //  try {
-    //    const gj = await shp(entry.url); // GeoJSON from shapefile
-    //    const layer = L.geoJSON(gj, { style: styleForColor(color), onEachFeature: bindPopupProps });
-    //    loadedLayers.set(entry.year, layer);
-    //    overlays[`${entry.year}`] = layer; // for layer control
-    //    layerControl.addOverlay(layer, `${entry.year}`);
-    //    return layer;
-    //  } catch (err) {
-    //    console.error(`Failed loading ${entry.year}:`, err);
-    //    return null;
-    //  }
-    //}
-    async function loadYearLayer(entry, color) {
-    try {
-      // Resolve relative paths against the page URL (handles /subfolders/ correctly)
-      const resolved = new URL(entry.url, window.location.href).href;
-      console.log('Fetching shapefile:', resolved);
-      const gj = await shp(resolved); // GeoJSON from shapefile ZIP
-      const layer = L.geoJSON(gj, { style: styleForColor(color), onEachFeature: bindPopupProps });
-      loadedLayers.set(entry.year, layer);
-      overlays[`${entry.year}`] = layer;
-      layerControl.addOverlay(layer, `${entry.year}`);
-      return layer;
-    } catch (err) {
-      console.error(`Failed loading ${entry.year}:`, err);
-      alert(`Could not load shapefile for ${entry.year}. Check the ZIP path & structure.\nSee console for details.`);
-      return null;
-    }
-  }
-
-    // Create checkboxes and lazy-load layers on first toggle
-    const boundsAccumulator = [];
-
-    YEAR_LAYERS.forEach(async (entry, idx) => {
-      const color = COLORS[idx % COLORS.length];
-      const cb = addYearCheckbox({ year: entry.year, color });
-
-      let loaded = false;
-      cb.addEventListener('change', async (e) => {
-        let layer = loadedLayers.get(entry.year);
-        if (e.target.checked) {
-          if (!layer) {
-            if (!loaded) { loaded = true; }
-            layer = await loadYearLayer(entry, color);
-          }
-          if (layer) {
-            layer.addTo(map);
-            if (layer.getBounds && layer.getBounds().isValid()) {
-              boundsAccumulator.push(layer.getBounds());
-              const union = boundsAccumulator.reduce((acc,b) => acc ? acc.extend(b) : L.latLngBounds(b.getSouthWest(), b.getNorthEast()), null);
-              if (union) map.fitBounds(union, { padding: [20,20] });
-            }
-          }
-        } else {
-          if (layer) map.removeLayer(layer);
-        }
+    // Initialize UI
+    SOURCES.forEach((src, i) => {
+      const color = COLORS[i % COLORS.length];
+      const cb = addYearCheckbox(src.year, color);
+      cb.addEventListener('change', () => {
+        ensureYearLayer(src);
+        const vis = cb.checked ? 'visible' : 'none';
+        ['fill','line'].forEach(t => {
+          const layerId = `${t}-${src.year}`;
+          if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', vis);
+        });
       });
     });
 
+    // Basemap switcher
+    document.querySelectorAll('input[name="basemap"]').forEach(r => {
+      r.addEventListener('change', (e) => {
+        const val = e.target.value;
+        map.setLayoutProperty('basemap-osm', 'visibility', val==='osm' ? 'visible' : 'none');
+        map.setLayoutProperty('basemap-esri', 'visibility', val==='esri' ? 'visible' : 'none');
+      });
+    });
   </script>
 </body>
 </html>

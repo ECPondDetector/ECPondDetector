@@ -230,35 +230,7 @@
     const statusEl = document.getElementById('status');
     const opacitySliderEl = document.getElementById('opacitySlider');
     const added = new Map(); // year -> true once added
-    const yearLayerPromises = new Map(); // year -> Promise while layer is being prepared
     const checkboxes = [];
-
-    class FullFetchSource {
-      constructor(url, key) {
-        this.url = url;
-        this.key = key;
-        this.bufferPromise = null;
-      }
-
-      getKey() {
-        return this.key;
-      }
-
-      async getBuffer() {
-        if (!this.bufferPromise) {
-          this.bufferPromise = fetch(this.url).then(res => {
-            if (!res.ok) throw new Error(`Failed to fetch PMTiles: ${this.url}`);
-            return res.arrayBuffer();
-          });
-        }
-        return this.bufferPromise;
-      }
-
-      async getBytes(offset, length) {
-        const buffer = await this.getBuffer();
-        return { data: buffer.slice(offset, offset + length) };
-      }
-    }
 
     function getSelectedCount() {
       return checkboxes.filter(cb => cb.checked).length;
@@ -269,8 +241,8 @@
       statusEl.textContent = `${count} year${count === 1 ? '' : 's'} visible`;
     }
 
-    async function setYearVisibility(src, isVisible) {
-      await ensureYearLayer(src);
+    function setYearVisibility(src, isVisible) {
+      ensureYearLayer(src);
       const vis = isVisible ? 'visible' : 'none';
       ['fill','line'].forEach(t => {
         const layerId = `${t}-${src.year}`;
@@ -364,27 +336,27 @@
       const color = COLORS[i % COLORS.length];
       const cb = addYearCheckbox(src.year, color);
       checkboxes.push(cb);
-      cb.addEventListener('change', async () => {
-        await setYearVisibility(src, cb.checked);
+      cb.addEventListener('change', () => {
+        setYearVisibility(src, cb.checked);
         updateStatus();
       });
     });
 
-    document.getElementById('selectAll').addEventListener('click', async () => {
-      await Promise.all(SOURCES.map(async (src, i) => {
+    document.getElementById('selectAll').addEventListener('click', () => {
+      SOURCES.forEach((src, i) => {
         const cb = checkboxes[i];
         cb.checked = true;
-        await setYearVisibility(src, true);
-      }));
+        setYearVisibility(src, true);
+      });
       updateStatus();
     });
 
-    document.getElementById('clearAll').addEventListener('click', async () => {
-      await Promise.all(SOURCES.map(async (src, i) => {
+    document.getElementById('clearAll').addEventListener('click', () => {
+      SOURCES.forEach((src, i) => {
         const cb = checkboxes[i];
         cb.checked = false;
-        await setYearVisibility(src, false);
-      }));
+        setYearVisibility(src, false);
+      });
       updateStatus();
     });
 

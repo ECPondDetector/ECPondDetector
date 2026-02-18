@@ -6,32 +6,155 @@
   <title>Ecuador Shrimp Pond Detector</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
   <style>
+    :root {
+      --panel-bg: rgba(255, 255, 255, 0.94);
+      --panel-border: rgba(255, 255, 255, 0.35);
+      --text-strong: #102028;
+      --text-muted: #4b616d;
+      --primary: #2279d6;
+    }
     html, body { height: 100%; margin: 0; }
+    body {
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+      color: var(--text-strong);
+      background: #e6edf1;
+    }
     #map { height: 100%; width: 100%; }
     .toolbar {
-      position: absolute; top: 10px; left: 10px; z-index: 1000;
-      background: rgba(255,255,255,0.95); border-radius: 14px; padding: 10px 12px;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.15); font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
-      width: 260px;
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 1000;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(7px);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18);
+      width: min(300px, calc(100vw - 28px));
     }
-    .toolbar h3 { margin: 0 0 8px 0; font-size: 14px; }
-    .year-list { display:flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow:auto; padding-right: 4px; }
-    .year-item { display:flex; align-items:center; gap:8px; font-size: 13px; }
+    .toolbar h2 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+    .subtitle {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .toolbar h3 {
+      margin: 0;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .toolbar-section {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(16, 32, 40, 0.12);
+    }
+    .toolbar-controls {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .ghost-btn {
+      border: 1px solid rgba(34, 121, 214, 0.26);
+      color: var(--primary);
+      background: rgba(34, 121, 214, 0.08);
+      border-radius: 999px;
+      font-size: 12px;
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+    .ghost-btn:hover { background: rgba(34, 121, 214, 0.15); }
+    .year-list {
+      display:flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: min(40vh, 320px);
+      overflow:auto;
+      padding-right: 4px;
+      margin-top: 8px;
+    }
+    .year-item {
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      font-size: 13px;
+      padding: 6px;
+      border-radius: 8px;
+      transition: background 140ms ease;
+    }
+    .year-item:hover { background: rgba(0, 0, 0, 0.045); }
+    .year-main {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
     .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.2); }
-    .basemap { margin-top:10px; }
-    .basemap label { margin-right: 8px; font-size: 13px; }
+    .basemap-options {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .basemap-option {
+      border: 1px solid rgba(16, 32, 40, 0.16);
+      border-radius: 8px;
+      padding: 6px 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.7);
+    }
+    .status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .slider-wrap {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .slider-wrap input { width: 100%; }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
   <div class="toolbar">
-    <h3>Years:</h3>
-    <div id="yearList" class="year-list"></div>
-    <div class="basemap">
+    <h2>Ecuador Pond Detector</h2>
+    <p class="subtitle">Toggle shrimp pond layers by year</p>
+
+    <div class="toolbar-section">
+      <h3>Years</h3>
+      <div class="toolbar-controls">
+        <button id="selectAll" class="ghost-btn" type="button">Select all</button>
+        <button id="clearAll" class="ghost-btn" type="button">Clear all</button>
+      </div>
+      <div id="yearList" class="year-list"></div>
+      <div class="slider-wrap">
+        <span>Opacity</span>
+        <input id="opacitySlider" type="range" min="0.05" max="0.8" step="0.05" value="0.25" />
+      </div>
+      <div id="status" class="status">0 years visible</div>
+    </div>
+
+    <div class="toolbar-section basemap">
       <h3>Basemap</h3>
-      <label><input type="radio" name="basemap" value="osm" checked>OSM</label>
-      <label><input type="radio" name="basemap" value="esri"> Esri</label>
+      <div class="basemap-options">
+        <label class="basemap-option"><input type="radio" name="basemap" value="osm" checked>OSM</label>
+        <label class="basemap-option"><input type="radio" name="basemap" value="esri"> Esri</label>
+      </div>
     </div>
   </div>
 
@@ -104,11 +227,34 @@
 
     // Build year toggles and lazy-add vector tile sources/layers
     const yearListEl = document.getElementById('yearList');
+    const statusEl = document.getElementById('status');
+    const opacitySliderEl = document.getElementById('opacitySlider');
     const added = new Map(); // year -> true once added
+    const checkboxes = [];
+
+    function getSelectedCount() {
+      return checkboxes.filter(cb => cb.checked).length;
+    }
+
+    function updateStatus() {
+      const count = getSelectedCount();
+      statusEl.textContent = `${count} year${count === 1 ? '' : 's'} visible`;
+    }
+
+    function setYearVisibility(src, isVisible) {
+      ensureYearLayer(src);
+      const vis = isVisible ? 'visible' : 'none';
+      ['fill','line'].forEach(t => {
+        const layerId = `${t}-${src.year}`;
+        if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', vis);
+      });
+    }
 
     function addYearCheckbox(year, color) {
       const row = document.createElement('label');
       row.className = 'year-item';
+      const main = document.createElement('span');
+      main.className = 'year-main';
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.id = `year-${year}`;
@@ -118,7 +264,8 @@
       sw.style.background = color;
       const txt = document.createElement('span');
       txt.textContent = String(year);
-      row.appendChild(cb); row.appendChild(sw); row.appendChild(txt);
+      main.appendChild(cb); main.appendChild(sw); main.appendChild(txt);
+      row.appendChild(main);
       yearListEl.appendChild(row);
       return cb;
     }
@@ -174,13 +321,36 @@
     SOURCES.forEach((src, i) => {
       const color = COLORS[i % COLORS.length];
       const cb = addYearCheckbox(src.year, color);
+      checkboxes.push(cb);
       cb.addEventListener('change', () => {
-        ensureYearLayer(src);
-        const vis = cb.checked ? 'visible' : 'none';
-        ['fill','line'].forEach(t => {
-          const layerId = `${t}-${src.year}`;
-          if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', vis);
-        });
+        setYearVisibility(src, cb.checked);
+        updateStatus();
+      });
+    });
+
+    document.getElementById('selectAll').addEventListener('click', () => {
+      SOURCES.forEach((src, i) => {
+        const cb = checkboxes[i];
+        cb.checked = true;
+        setYearVisibility(src, true);
+      });
+      updateStatus();
+    });
+
+    document.getElementById('clearAll').addEventListener('click', () => {
+      SOURCES.forEach((src, i) => {
+        const cb = checkboxes[i];
+        cb.checked = false;
+        setYearVisibility(src, false);
+      });
+      updateStatus();
+    });
+
+    opacitySliderEl.addEventListener('input', () => {
+      const value = Number(opacitySliderEl.value);
+      SOURCES.forEach(src => {
+        const layerId = `fill-${src.year}`;
+        if (map.getLayer(layerId)) map.setPaintProperty(layerId, 'fill-opacity', value);
       });
     });
 
@@ -192,7 +362,8 @@
         map.setLayoutProperty('basemap-esri', 'visibility', val==='esri' ? 'visible' : 'none');
       });
     });
+
+    updateStatus();
   </script>
 </body>
 </html>
-
